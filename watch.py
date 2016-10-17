@@ -1,28 +1,28 @@
 import time
 import os
 import sys
+import re
 
+import requests
+from requests.exceptions import ConnectionError
+import boto.ec2
 from docker import Client
 
 
-# looking for the container id
-with open('/proc/self/cgroup') as f:
-    lines = f.read().split('\n')
+def get_container_id():
+    with open('/proc/self/cgroup') as f:
+        lines = f.read().split('\n')
 
-CID = lines[0].split('/')[-1]
-
-print('Container ID: %s' % CID)
-
-if not os.path.exists('/var/run/docker.sock'):
-    print('Cannot see the Docker socket file, aborting')
-    sys.exit(-1)
-else:
-    print('Docker sock file present.')
+    cid = lines[0].split('/')[-1]
+    if cid.startswith('docker'):
+        cid = re.findall('docker-(.*)\.scope', CID)[0]
+    return cid
 
 
-#RUN export EC2_AVAIL_ZONE=`curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone`
-#RUN export EC2_REGION="`echo \"$EC2_AVAIL_ZONE\" | sed -e 's:\([0-9][0-9]*\)[a-z]*\$:\\1:'`"
-#RUN export EC2_INSTANCE_ID=`curl -s http://169.254.169.254/latest/meta-data/instance-id`
+def check_docker_sock():
+    if not os.path.exists('/var/run/docker.sock'):
+        print('Cannot see the Docker socket file, aborting')
+        sys.exit(-1)
 
 
 def get_containers():
@@ -31,14 +31,36 @@ def get_containers():
     return [cont for cont in cli.containers() if cont['Id'] != CID]
 
 
-def terminate_box():
-    #aws ec2 terminate-instances --instance-ids $EC2_INSTANCE_ID --region $EC2_REGION
-    pass
+def get_ec2_info():
+    root = 'http://169.254.169.254/latest/meta-data/'
+    try:
+        zone = requests.get('%s/placement/availability-zone' % root).text
+        region = zone[:-1]
+        instance_id = requests.get('%s/instance-id' % root).text
+    except ConnectionError:
+        print('Cannot reach EC2, aborting')
+        sys.exit(-1)
+
+    return {'zone': zone, 'region': region, 'id': instance_id}
 
 
-print('Watching')
+
+def terminate_instance(region, instance_id):
+    conn = boto.ec2.connect_to_region(region)
+    conn.terminate_instances(instance_ids=[instance_id])
+
+
+
+check_docker_sock()
+print('Container ID: %s' % get_container_id())
+ec2_info = get_ec2_info()
+print(ec2_info)
+print('Watching...')
 
 while True:
-    print(get_containers())
-    time.sleep(1)
+    containers = get_containers()
+    if containers == []:
+        terminate_instance(ec2_info['region'], ec2_info['id'])
 
+
+    time.sleep(1.)
