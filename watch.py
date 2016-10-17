@@ -15,8 +15,11 @@ def get_container_id():
 
     cid = lines[0].split('/')[-1]
     if cid.startswith('docker'):
-        cid = re.findall('docker-(.*)\.scope', CID)[0]
+        cid = re.findall('docker-(.*)\.scope', cid)[0]
     return cid
+
+
+CID = get_container_id()
 
 
 def check_docker_sock():
