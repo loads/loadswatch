@@ -47,23 +47,34 @@ def get_ec2_info():
     return {'zone': zone, 'region': region, 'id': instance_id}
 
 
-
 def terminate_instance(region, instance_id):
     conn = boto.ec2.connect_to_region(region)
     conn.terminate_instances(instance_ids=[instance_id])
 
 
-
+ONE_HOUR = 3600
+SLEEP_TIME = 60
 check_docker_sock()
 print('Container ID: %s' % get_container_id())
 ec2_info = get_ec2_info()
 print(ec2_info)
+
+start = time.time()
 print('Watching...')
+
 
 while True:
     containers = get_containers()
+
     if containers == []:
-        terminate_instance(ec2_info['region'], ec2_info['id'])
+        idling_since = time.time() - start
 
+        if idling_since < ONE_HOUR:
+            print('Nothing is happening since %s seconds' % idling_since)
+        else:
+            print('Idling for one hour, killing it')
+            terminate_instance(ec2_info['region'], ec2_info['id'])
+    else:
+        start = time.time()
 
-    time.sleep(1.)
+    time.sleep(SLEEP_TIME)
